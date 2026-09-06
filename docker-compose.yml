@@ -1,0 +1,13 @@
+# Rydberg PDF — root compose entry point.
+#
+# This file does almost nothing itself: it just includes the per-service
+# compose files under ./compose. Run everything from the repo root:
+#
+#   docker compose --profile pdf up -d
+#   docker compose ps
+#   docker compose down
+#
+# There is only one service today (the frontend) because the editor runs
+# entirely in the browser — see README.md for why there is no backend.
+include:
+  - compose/frontend.yml

@@ -1,0 +1,26 @@
+services:
+  frontend-pdf:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: rydberg-frontend-pdf
+    restart: unless-stopped
+    profiles:
+      - pdf
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    environment:
+      PDF_HOST: ${PDF_HOST:-pdf.rydberg.app}
+      CHOKIDAR_USEPOLLING: "true"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pdf-fe.rule=Host(`${PDF_HOST:-pdf.rydberg.app}`)"
+      - "traefik.http.routers.pdf-fe.entrypoints=web"
+      - "traefik.http.services.pdf-fe.loadbalancer.server.port=5173"
+    networks:
+      - rydberg-net
+
+networks:
+  rydberg-net:
+    external: true
