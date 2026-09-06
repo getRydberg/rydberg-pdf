@@ -15,7 +15,7 @@ export type RenderDoc = PDFDocumentProxy
 
 export async function openDocument(bytes: Uint8Array): Promise<RenderDoc> {
   // .slice() — pdf.js takes ownership of the buffer it's given.
-  return await pdfjs.getDocument({ data: bytes.slice() }).promise
+  return await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, maxImageSize: 16_000_000 }).promise
 }
 
 /** Unrotated page size in points, plus the page's own baked-in rotation. */

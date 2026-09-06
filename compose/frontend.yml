@@ -7,12 +7,10 @@ services:
     restart: unless-stopped
     profiles:
       - pdf
-    volumes:
-      - ../frontend:/app
-      - /app/node_modules
-    environment:
-      PDF_HOST: ${PDF_HOST:-pdf.rydberg.app}
-      CHOKIDAR_USEPOLLING: "true"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.pdf-fe.rule=Host(`${PDF_HOST:-pdf.rydberg.app}`)"

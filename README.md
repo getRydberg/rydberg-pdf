@@ -65,7 +65,7 @@ docker network create rydberg-net    # skip if it already exists
 docker compose --profile pdf up -d --build
 ```
 
-The editor is on `http://localhost:5173`.
+The editor is served on port 5173 inside `rydberg-net`; access it through your configured reverse proxy. No host port is published.
 
 `--profile pdf` is required: the service declares `profiles: [pdf]` per the
 module contract, so a bare `docker compose up` starts nothing.
@@ -82,7 +82,7 @@ npm run dev
 
 | Variable | What it's for |
 |---|---|
-| `PDF_HOST` | Hostname this module is routed to. Must match what you point at `rydberg-frontend-pdf` in your tunnel/proxy config. Also added to Vite's allowed-hosts list, because Vite 6 rejects requests with unrecognized `Host` headers. |
+| `PDF_HOST` | Hostname this module is routed to. Must match what you point at `rydberg-frontend-pdf` in your tunnel/proxy config. For local development it is also used by Vite's allowed-hosts list. |
 
 That is the only variable. See `.env.example`.
 
@@ -157,3 +157,26 @@ The trade-off is real, and it's the last entry under
 
 Early. The editor works end to end — open, edit, save — but hasn't been
 tested against the long tail of PDFs in the wild. Expect rough edges.
+
+## Public hosting security
+
+Docker builds the frontend and serves only the production assets using an
+unprivileged Nginx server. Source directories are not mounted into production.
+Only GET/HEAD requests are accepted; unknown paths (including PHP probes) return
+404. Security headers restrict scripts, workers, frames, and network destinations.
+Google Fonts remains allowed for the existing typography. Use HTTPS at the proxy.
+Run `npm run dev` only for development.
+
+Imports check file signatures as well as formats: up to 20 PDFs totaling 50 MB
+per import, 500 pages per imported document including appended pages, and PNG/JPEG
+images up to 10 MB and 16 megapixels. These are browser resource guardrails, not
+antivirus scanning or a security boundary against someone controlling their own
+tab. PDF.js eval support is disabled. React renders input text as text.
+
+The editor does not sanitize existing PDF actions, attachments, or annotations;
+exported documents may retain active content from the originals. File signatures
+do not prove a file is harmless. There is no server upload or shared document state
+for changes in a visitor's developer tools to modify.
+
+After changing hosting configuration, rebuild with
+`docker compose --profile pdf up -d --build`.

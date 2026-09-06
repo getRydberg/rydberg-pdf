@@ -17,6 +17,7 @@ import { displaySize, normalizeRotation } from '../lib/geometry'
 import { buildPdf, downloadPdf, outputName } from '../lib/save'
 import { DEFAULT_STYLE, toolDefaults, type Style } from '../lib/style'
 import { uid } from '../lib/id'
+import { validatePdf, validateImage, MAX_PDF_BYTES, MAX_IMAGE_BYTES, MAX_PAGES } from '../lib/validation'
 
 export default function App() {
   const [sources, setSources] = useState<Record<string, Source>>({})
@@ -49,6 +50,7 @@ export default function App() {
 
   const pdfInput = useRef<HTMLInputElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
+  const opening = useRef(false)
   const insertMode = useRef<'replace' | 'append'>('replace')
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -103,16 +105,21 @@ export default function App() {
 
   const addFiles = useCallback(
     async (list: FileList | File[], mode: 'replace' | 'append') => {
-      const files = Array.from(list).filter(
-        (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name),
-      )
-      if (!files.length) {
+      if (opening.current) return
+      const files = Array.from(list)
+      if (!files.length || files.some((f) => !/\.pdf$/i.test(f.name))) {
         setError('Only PDF files can be opened here.')
         return
       }
 
+      if (files.length > 20 || files.some((f) => !f.size || f.size > MAX_PDF_BYTES) || files.reduce((n, f) => n + f.size, 0) > MAX_PDF_BYTES) {
+        setError('Open up to 20 PDFs totaling at most 50 MB at a time.')
+        return
+      }
+      opening.current = true
       setLoading(true)
       setError(null)
+      const createdDocs: RenderDoc[] = []
       try {
         const nextSources: Record<string, Source> = {}
         const nextDocs: Record<string, RenderDoc> = {}
@@ -121,8 +128,13 @@ export default function App() {
 
         for (const file of files) {
           const bytes = new Uint8Array(await file.arrayBuffer())
+          validatePdf(bytes)
           const srcId = uid('src')
           const rdoc = await openDocument(bytes)
+          createdDocs.push(rdoc)
+          if (nextPages.length + rdoc.numPages + (mode === 'append' ? docRef.current.pages.length : 0) > MAX_PAGES) {
+            throw new Error('A document can contain at most 500 pages.')
+          }
           nextSources[srcId] = { id: srcId, name: file.name, bytes }
           nextDocs[srcId] = rdoc
           for (let i = 0; i < rdoc.numPages; i += 1) {
@@ -155,6 +167,7 @@ export default function App() {
           })
         }
       } catch (e) {
+        await Promise.allSettled(createdDocs.map((d) => d.destroy()))
         const msg = e instanceof Error ? e.message : String(e)
         setError(
           /password/i.test(msg)
@@ -162,6 +175,7 @@ export default function App() {
             : `Could not open that file: ${msg}`,
         )
       } finally {
+        opening.current = false
         setLoading(false)
       }
     },
@@ -307,19 +321,28 @@ export default function App() {
       setToolState('select')
       return
     }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader()
-      r.onload = () => resolve(String(r.result))
-      r.onerror = () => reject(r.error)
-      r.readAsDataURL(file)
-    })
-    const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
-      img.onerror = () => reject(new Error('That image could not be read.'))
-      img.src = dataUrl
-    })
-    setPendingImage({ dataUrl, mime: file.type, ...dims })
+    try {
+      if (!file.size || file.size > MAX_IMAGE_BYTES) throw new Error('Images must be between 1 byte and 10 MB.')
+      validateImage(new Uint8Array(await file.arrayBuffer()), file.type)
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result))
+        r.onerror = () => reject(r.error)
+        r.readAsDataURL(file)
+      })
+      const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+        img.onerror = () => reject(new Error('That image could not be read.'))
+        img.src = dataUrl
+      })
+      if (dims.w * dims.h > 16_000_000) throw new Error('Images must be at most 16 megapixels.')
+      setPendingImage({ dataUrl, mime: file.type, ...dims })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read that image.')
+      setPendingImage(null)
+      setToolState('select')
+    }
   }
 
   // ── Save ───────────────────────────────────────────────────────────────
